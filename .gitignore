@@ -1,0 +1,18 @@
+# Data directories
+prometheus/data/
+grafana/data/
+alertmanager/data/
+
+# Sensitive files
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

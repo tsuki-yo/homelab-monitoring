@@ -1,0 +1,55 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+rule_files:
+    - "alerts/*.yml"
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Monitoring Host (Raspberry Pi 5) - Node Exporter
+  - job_name: 'monitoring-host-node'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['192.168.1.201:9100']  # Replace with your monitoring host IP
+        labels:
+          host: 'monitoring-host'
+          instance_name: 'rpi-monitoring'
+
+  # Monitoring Host - cAdvisor
+  - job_name: 'monitoring-host-cadvisor'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          host: 'monitoring-host'
+          instance_name: 'rpi-monitoring'
+
+  # Additional Host (N305) - Node Exporter
+  - job_name: 'n305-node'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['192.168.1.50:9100']  # Replace with your additional host IP
+        labels:
+          host: 'n305'
+          instance_name: 'n305-server'
+
+  # Additional Host (N305) - cAdvisor
+  - job_name: 'n305-cadvisor'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['192.168.1.50:8080']  # Replace with your additional host IP
+        labels:
+          host: 'n305'
+          instance_name: 'n305-server'

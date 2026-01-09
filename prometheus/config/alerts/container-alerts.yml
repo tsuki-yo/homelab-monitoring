@@ -1,0 +1,32 @@
+groups:
+  - name: container-alerts
+    rules:
+      # Container down
+      - alert: ContainerDown
+        expr: absent(container_last_seen{name=~".+"}) == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} is down"
+          description: "Container {{ $labels.name }} on {{ $labels.host }} has been down for more than 2 minutes"
+
+      # Container high memory (>8GB)
+      - alert: ContainerHighMemory
+        expr: container_memory_usage_bytes{name=~".+"} > 8589934592
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} high memory"
+          description: "Container {{ $labels.name }} on {{ $labels.host }} memory usage is above 8GB (current: {{ $value | humanize1024 }})"
+
+      # Critical service down (Bitwarden, Immich)
+      - alert: CriticalServiceDown
+        expr: absent(container_last_seen{name=~"bitwarden|immich-server"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical service {{ $labels.name }} is down"
+          description: "Critical service {{ $labels.name }} has been down for more than 1 minute - immediate attention required"
