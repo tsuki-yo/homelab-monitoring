@@ -3,33 +3,10 @@ networks:
     driver: bridge
 
 services:
-  prometheus:
-    container_name: monitoring-prometheus
-    image: prom/prometheus:latest
-    hostname: rpi-prometheus
-    restart: unless-stopped
-    user: "nobody"
-    networks:
-      - internal
-    ports:
-      - "9090:9090"
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=30d'
-      - '--web.enable-admin-api'
-    volumes:
-      - ./prometheus/config:/etc/prometheus
-      - ./prometheus/data:/prometheus
-    depends_on:
-      - cadvisor
-      - alertmanager
-    links:
-      - cadvisor:cadvisor
-      - alertmanager:alertmanager
-
   grafana:
     container_name: monitoring-grafana
+    environment:
+      - GF_SERVER_ROOT_URL=http://192.168.1.198:3000
     image: grafana/grafana:latest
     hostname: rpi-grafana
     restart: unless-stopped
@@ -39,8 +16,8 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./grafana/data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
+      - /home/pi/docker/grafana/data:/var/lib/grafana
+      - /home/pi/docker/grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - prometheus
 
@@ -54,7 +31,7 @@ services:
     ports:
       - "9093:9093"
     volumes:
-      - ./alertmanager:/etc/alertmanager
+      - /home/pi/docker/alertmanager:/etc/alertmanager
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
@@ -82,3 +59,109 @@ services:
       - /var/lib/docker/:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro
       - /etc/machine-id:/etc/machine-id:ro
+
+  node-exporter:
+    container_name: monitoring-node-exporter
+    image: prom/node-exporter:latest
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - /:/host:ro,rslave
+
+  prometheus:
+    container_name: monitoring-prometheus
+    image: prom/prometheus:latest
+    hostname: rpi-prometheus
+    restart: unless-stopped
+    user: "nobody"
+    networks:
+      - internal
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-admin-api'
+    volumes:
+      - /home/pi/docker/prometheus/config:/etc/prometheus
+      - /home/pi/docker/prometheus/data:/prometheus
+    depends_on:
+      - cadvisor
+      - alertmanager
+    links:
+      - cadvisor:cadvisor
+      - alertmanager:alertmanager
+
+  uptime-kuma:
+    container_name: uptime-kuma
+    image: louislam/uptime-kuma:1
+    hostname: uptime-kuma
+    restart: unless-stopped
+    networks:
+      - internal
+    ports:
+      - "3001:3001"
+    volumes:
+      - /home/pi/docker/uptimekuma/app:/app/data
+
+  plausible_db:
+    container_name: plausible_postgres
+    image: postgres:16-alpine
+    restart: always
+    volumes:
+      - plausible_db_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      start_period: 1m
+
+  plausible_events_db:
+    container_name: plausible_clickhouse
+    image: clickhouse/clickhouse-server:24.12-alpine
+    restart: always
+    volumes:
+      - plausible_event_data:/var/lib/clickhouse
+      - plausible_event_logs:/var/log/clickhouse-server
+      - ./clickhouse/logs.xml:/etc/clickhouse-server/config.d/logs.xml:ro
+      - ./clickhouse/ipv4-only.xml:/etc/clickhouse-server/config.d/ipv4-only.xml:ro
+      - ./clickhouse/low-resources.xml:/etc/clickhouse-server/config.d/low-resources.xml:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    environment:
+      - CLICKHOUSE_SKIP_USER_SETUP=1
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 -O - http://127.0.0.1:8123/ping || exit 1"]
+      start_period: 1m
+
+  plausible_app:
+    container_name: plausible_app
+    image: ghcr.io/plausible/community-edition:v3.0.1
+    restart: unless-stopped
+    command: sh -c "/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"
+    depends_on:
+      plausible_db:
+        condition: service_healthy
+      plausible_events_db:
+        condition: service_healthy
+    ports:
+      - 8000:8000
+    volumes:
+      - plausible_app_data:/var/lib/plausible
+    environment:
+      - BASE_URL=${BASE_URL}
+      - SECRET_KEY_BASE=${SECRET_KEY_BASE}
+      - DATABASE_URL=${DATABASE_URL}
+      - CLICKHOUSE_DATABASE_URL=http://plausible_events_db:8123/plausible_events_db
+
+volumes:
+  plausible_db_data:
+  plausible_event_data:
+  plausible_event_logs:
+  plausible_app_data:
